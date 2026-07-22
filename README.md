@@ -22,7 +22,8 @@ docker run --name hedron --rm --gpus all \
   -v "${HOME}/.cache/huggingface:/data" \
   ghcr.io/geodesa-ai/hedron:latest \
   --port 80 \
-  --model hf://unsloth/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf
+  --model hf://unsloth/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf \
+  --model-api-name qwen35
 ```
 
 The first start downloads the model. Follow startup and model-loading progress with:
@@ -44,7 +45,7 @@ Then send a request:
 curl --fail http://127.0.0.1:8080/v1/chat/completions \
   -H 'content-type: application/json' \
   -d '{
-    "model": "default",
+    "model": "qwen35",
     "messages": [
       {"role": "user", "content": "Explain speculative decoding in one paragraph."}
     ],
@@ -52,7 +53,7 @@ curl --fail http://127.0.0.1:8080/v1/chat/completions \
   }'
 ```
 
-`default` selects the container's default loaded model. Use the exact ID returned by `/v1/models` when addressing a specific model in a multi-model deployment.
+`--model-api-name` sets the stable ID returned by `/v1/models` and accepted in each request's `model` field. `default` is always available as an alias for the first declaration, so the request above could also use `"model": "default"`.
 
 ## What works in this release
 
@@ -111,15 +112,17 @@ Every source uses an explicit scheme so a repository name can never be mistaken 
 | `s3://` | S3-compatible object or prefix, staged into the local model cache | `s3://models/releases/qwen` |
 | `nfs://` | Path in an already-mounted NFS export | `nfs://storage/models/qwen` |
 
-Settings after a `--model` belong to that model until the next `--model`. A setting may appear only once in each declaration. The first declaration is the default model:
+Settings after a `--model` belong to that model until the next `--model`. A setting may appear only once in each declaration. Use `--model-api-name` to give each model a stable public routing name. The source URI remains the loading location and provenance; it is not changed by the API name. The first declaration is also addressable as `default`:
 
 ```bash
 hedron-server --port 80 \
-  --model hf://org/primary --revision 4d2c1f0 --isq Q4K \
-  --model file:///models/embedding --dtype bf16
+  --model hf://org/primary --model-api-name chat --revision 4d2c1f0 --isq Q4K \
+  --model file:///models/embedding --model-api-name embeddings --dtype bf16
 ```
 
-Common model-scoped settings include `--revision`, `--dtype`, `--isq`, `--num-device-layers`, `--chat-template`, `--expert-gpu-slots`, and the speculative-decoding settings below. Put each setting after the model it configures.
+The example exposes `chat` and `embeddings` in `/v1/models`; requests select one with `"model": "chat"` or `"model": "embeddings"`. If `--model-api-name` is omitted, Hedron derives a name from the loaded model source. Explicit names are recommended for stable deployments, especially when serving multiple models. Names must be unique, and `default` is reserved for the first-model alias.
+
+Common model-scoped settings include `--model-api-name`, `--revision`, `--dtype`, `--isq`, `--num-device-layers`, `--chat-template`, `--expert-gpu-slots`, and the speculative-decoding settings below. Put each setting after the model it configures.
 
 Inspect the exact options shipped in an image:
 
@@ -144,7 +147,7 @@ By default Hedron checks `HF_TOKEN`, then `HUGGING_FACE_HUB_TOKEN`, then the cac
 
 ### Local models
 
-Mount a local directory read-only and pass the container path as the model ID:
+Mount a local directory read-only and pass the container path as the model source:
 
 ```bash
 docker run --name hedron --rm --gpus all \
