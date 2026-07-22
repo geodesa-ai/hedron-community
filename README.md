@@ -265,6 +265,14 @@ docker stop --time 30 hedron
 
 The server writes logs to stdout and stderr, exits nonzero when configuration or model loading fails, and receives normal container stop signals directly. The HTTP listener becomes available after model initialization, so `/health` and `/v1/models` are also practical readiness checks. Persisting `/data` avoids downloading weights again after replacement or restart.
 
+### Logs and telemetry
+
+Set `RUST_LOG` to change the stdout/stderr log filter; for example, `-e RUST_LOG=hedron_server=debug,hedron_core=debug,info`. Hedron has no request-log file option. Collect container output with the logging driver used by your platform.
+
+Prometheus metrics are always available at `/metrics`. To export OpenTelemetry traces and metrics, set `OTEL_EXPORTER_OTLP_ENDPOINT`; set `OTEL_SERVICE_NAME` as well so instances can be distinguished. Hedron accepts and propagates standard trace context from incoming requests.
+
+OpenInference telemetry may include model inputs and outputs. For sensitive workloads, set both `OPENINFERENCE_HIDE_INPUTS=true` and `OPENINFERENCE_HIDE_OUTPUTS=true` before enabling OTLP export.
+
 ### Security
 
 Hedron does not provide transport encryption or validate API keys. Do not expose it directly to an untrusted network. Keep the published port on localhost or a private network, or place it behind a reverse proxy or gateway that provides TLS, authentication, request limits, and audit policy.
