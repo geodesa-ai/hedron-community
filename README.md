@@ -1,10 +1,10 @@
 # Hedron
 
-Hedron is a GPU inference server for running Hugging Face and local models behind an OpenAI-compatible HTTP API. It serves text generation, multimodal chat, embeddings, reranking, image generation, speech, and transcription from one container interface.
+Hedron is a GPU inference server for running Hugging Face and local models behind an OpenAI-compatible HTTP API. One container can serve text generation, multimodal chat, embeddings, reranking, image generation, speech, or transcription.
 
 This README is the public operations manual. You do not need the source repository, a Python package, or a TOML file to deploy Hedron.
 
-[Quick start](#quick-start) · [Choose an image](#choose-an-image) · [Load a model](#load-a-model) · [Call the API](#call-the-api) · [Operate Hedron](#operate-hedron) · [Troubleshoot](#troubleshoot)
+[Quick start](#quick-start) · [Capabilities](#what-works-in-this-release) · [Choose an image](#choose-an-image) · [Load a model](#load-a-model) · [Call the API](#call-the-api) · [Operate Hedron](#operate-hedron) · [Troubleshoot](#troubleshoot)
 
 ## Quick start
 
@@ -54,9 +54,24 @@ curl --fail http://127.0.0.1:8080/v1/chat/completions \
 
 `default` selects the container's default loaded model. Use the exact ID returned by `/v1/models` when addressing a specific model in a multi-model deployment.
 
+## What works in this release
+
+Hedron chooses the runtime from model metadata; callers do not select a loader or model-family enum.
+
+| Workload | Public model interface | Status and constraints |
+|---|---|---|
+| Text generation | Hugging Face safetensors repository or one GGUF file | Supported |
+| Multimodal chat | Hugging Face safetensors repository | Supported when the repository contains a recognized vision-language model and processor |
+| Embeddings and reranking | Hugging Face safetensors repository | Supported through their dedicated endpoints |
+| Image generation | Hugging Face safetensors repository or local directory | Stable Diffusion 1.5, XL, and 3 loaders are available; Flux still needs component-source configuration not exposed by this CLI |
+| Speech generation and transcription | Hugging Face safetensors repository or local directory | Supported for implemented model families |
+| Video generation | HTTP surface only | No model can be auto-loaded through the public container CLI in this release |
+
+A direct `.gguf` source currently means text generation. Non-text GGUFs, standalone projectors, tokenizer artifacts, and other component-only GGUFs are not root models in the public interface.
+
 ## Choose an image
 
-Images are published at [`ghcr.io/geodesa-ai/hedron`](https://github.com/geodesa-ai/hedron/pkgs/container/hedron). Every image contains all supported model architectures and the production kernel set; tags select GPU machine code and CUDA runtime, not model families. Experimental quantization kernels are opt-in source-build features and are not carried in release images. SM121 and automatic tags are multi-platform manifests with native `linux/amd64` and `linux/arm64` variants, so Docker selects the correct executable for GB10/DGX Spark automatically. Other architecture-specific tags currently target `linux/amd64`.
+Images are published at [`ghcr.io/geodesa-ai/hedron`](https://github.com/geodesa-ai/hedron/pkgs/container/hedron). Every image contains all supported model architectures and the production kernel set; tags select GPU machine code and CUDA runtime, not model families. SM121 and automatic tags are multi-platform manifests with native `linux/amd64` and `linux/arm64` variants, so Docker selects the correct executable for GB10/DGX Spark automatically. Other architecture-specific tags currently target `linux/amd64`.
 
 | CUDA target | GPU generation and examples | Host platform | CUDA 12 rolling tag | CUDA 13 rolling tag |
 |---|---|---|---|---|
@@ -85,9 +100,7 @@ The container entrypoint is `hedron-server`. Its command shape is:
 hedron-server [SERVER OPTIONS] --model SOURCE [MODEL SETTINGS] [--model SOURCE [MODEL SETTINGS] ...]
 ```
 
-There are no loader subcommands and no JSON or TOML model selector. Hedron infers the loader from model metadata and the artifact container. A server requires `--port`, `--mcp-port`, or `--interactive-mode`.
-
-Safetensors repositories and directories are capability-detected for text, multimodal, embeddings, reranking, Stable Diffusion 1.5/XL/3 image generation, speech, and transcription. Flux and LTX manifests are detected and fail with a specific startup error, but those pipelines still require external component-source configuration that the unified container CLI does not expose; they are not operable through this release interface. A direct `.gguf` locator is intentionally a text-generation container; non-text GGUF, projector/component layouts, and GGUF embeddings or audio are not supported through the unified interface yet. Use a supported safetensors repository or directory for those capabilities rather than relying on filename guessing.
+There are no loader subcommands and no JSON or TOML model selector. Hedron infers the loader from model metadata and the artifact container. A containerized HTTP deployment needs `--port`.
 
 Every source uses an explicit scheme so a repository name can never be mistaken for a filesystem path:
 
@@ -106,12 +119,12 @@ hedron-server --port 80 \
   --model file:///models/embedding --dtype bf16
 ```
 
-Common model-scoped settings include `--revision`, `--dtype`, `--isq`, `--topology`, `--num-device-layers`, `--chat-template`, `--jinja-explicit`, `--expert-gpu-slots`, and the speculative-decoding settings below. Put each setting after the model it configures.
+Common model-scoped settings include `--revision`, `--dtype`, `--isq`, `--num-device-layers`, `--chat-template`, `--expert-gpu-slots`, and the speculative-decoding settings below. Put each setting after the model it configures.
 
 Inspect the exact options shipped in an image:
 
 ```bash
-docker run --rm ghcr.io/geodesa-ai/hedron:latest --help
+docker run --rm --gpus all ghcr.io/geodesa-ai/hedron:latest --help
 ```
 
 ### Hugging Face authentication
@@ -153,11 +166,11 @@ The interactive API reference is available from a running server at `http://127.
 | Loaded models | `GET /v1/models` |
 | Chat and multimodal chat | `POST /v1/chat/completions` |
 | Text completions | `POST /v1/completions` |
-| Responses API | `/v1/responses` |
+| Responses API | `POST /v1/responses` |
 | Embeddings | `POST /v1/embeddings` |
 | Reranking | `POST /v1/rerank` |
 | Image generation | `POST /v1/images/generations` |
-| Video API surface (no operable auto-loaded pipeline in this release) | `/v1/videos`, `/v1/videos/generations` |
+| Video API surface (no operable auto-loaded pipeline in this release) | `POST /v1/videos`, `POST /v1/videos/generations` |
 | Speech generation | `POST /v1/audio/speech` |
 | Transcription | `POST /v1/audio/transcriptions` |
 | Prometheus metrics | `GET /metrics` |
@@ -177,8 +190,6 @@ Common server-level controls apply to the whole process:
 | `--pa-gpu-mem-usage FRACTION` | Fraction of GPU memory available to PagedAttention |
 | `--pa-prefill-chunk-size N` | Bound prefill chunks to reduce peak memory |
 | `--pa-cache-type auto\|f8e4m3\|tq3` | KV-cache storage type |
-| `--rate-limit-requests N` | Enable a per-identity, in-process fixed-window request limit |
-| `--rate-limit-window-secs N` | Set that fixed window; defaults to 60 seconds |
 
 `--num-device-layers` and `--isq` are model-scoped; put them after the relevant `--model` declaration.
 
@@ -236,7 +247,7 @@ For a long-running deployment, use a fixed architecture tag, persist `/data`, na
 docker run -d --name hedron --restart unless-stopped --gpus all \
   -p 127.0.0.1:8080:80 \
   -v "${HOME}/.cache/huggingface:/data" \
-  ghcr.io/geodesa-ai/hedron:v0.7.0-sm89-cu13 \
+  ghcr.io/geodesa-ai/hedron:v0.7.1-sm89-cu13 \
   --port 80 \
   --model hf://unsloth/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf
 ```
@@ -256,7 +267,16 @@ The server writes logs to stdout and stderr, exits nonzero when configuration or
 
 ### Security
 
-Hedron does not provide transport encryption or validate API keys. Its optional rate limiter is local to one server process and uses an API-key header or peer IP only as the bucket identity; it is not authentication or a distributed quota system. Do not expose Hedron directly to an untrusted network. Keep the published port on localhost or a private network, or place it behind a reverse proxy or gateway that provides TLS, authentication, distributed request limits, and audit policy.
+Hedron does not provide transport encryption or validate API keys. Do not expose it directly to an untrusted network. Keep the published port on localhost or a private network, or place it behind a reverse proxy or gateway that provides TLS, authentication, request limits, and audit policy.
+
+### Known sharp edges
+
+- The first startup can spend substantial time downloading and loading weights before the HTTP listener opens. Treat container state as process health and `/health` as readiness.
+- Automatic images select one CUDA target for the process. Expose one GPU generation per container, or set `HEDRON_CUDA_TARGET` explicitly.
+- Model-scoped options are positional. An option configures the most recent `--model`; misplaced options fail startup rather than silently applying elsewhere.
+- `--revision` applies only to `hf://` sources. Pin both the image tag or digest and the model revision for a reproducible deployment.
+- Expert offloading currently applies to routed experts in GGUF MoE models. It does not make an otherwise unsupported model layout loadable.
+- The built-in HTTP server is an inference endpoint, not an internet-facing security boundary.
 
 ## Troubleshoot
 
