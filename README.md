@@ -14,13 +14,13 @@ You need:
 - a host driver capable of running CUDA 13 containers;
 - Docker configured with the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
-Start a Qwen3.5 GGUF model. `fat-cu13` detects the visible GPU architecture at startup:
+Start a Qwen3.5 GGUF model. The default image detects the visible GPU architecture at startup:
 
 ```bash
 docker run --name hedron --rm --gpus all \
   -p 127.0.0.1:8080:80 \
   -v "${HOME}/.cache/huggingface:/data" \
-  ghcr.io/geodesa-ai/hedron:fat-cu13 \
+  ghcr.io/geodesa-ai/hedron:latest \
   --port 80 \
   gguf -m unsloth/Qwen3.5-9B-GGUF -f Qwen3.5-9B-Q4_K_M.gguf
 ```
@@ -68,11 +68,11 @@ Images are published at [`ghcr.io/geodesa-ai/hedron`](https://github.com/geodesa
 | `sm_103f` | Blackwell Ultra: B300, GB300 | [`sm103f-cu13`](https://github.com/geodesa-ai/hedron/pkgs/container/hedron?tag=sm103f-cu13) |
 | `sm_120f` | Blackwell: RTX 50xx, RTX PRO Blackwell | [`sm120f-cu13`](https://github.com/geodesa-ai/hedron/pkgs/container/hedron?tag=sm120f-cu13) |
 | `sm_121f` | Blackwell: GB10, DGX Spark | [`sm121f-cu13`](https://github.com/geodesa-ai/hedron/pkgs/container/hedron?tag=sm121f-cu13) |
-| automatic | All targets above; selects at startup | [`fat-cu13`](https://github.com/geodesa-ai/hedron/pkgs/container/hedron?tag=fat-cu13) |
+| automatic | All targets above; selects at startup | [`latest`](https://github.com/geodesa-ai/hedron/pkgs/container/hedron?tag=latest) |
 
-Architecture-specific images are smaller and are the recommended production choice. `fat-cu13` packages every architecture-specific server binary and selects one using `nvidia-smi`. If GPUs with different compute capabilities are visible in one container, set an explicit target such as `-e HEDRON_CUDA_TARGET=sm89` or expose only one GPU generation.
+Architecture-specific images are smaller and are the recommended production choice. The default image packages every architecture-specific server binary and selects one using `nvidia-smi`. If GPUs with different compute capabilities are visible in one container, set an explicit target such as `-e HEDRON_CUDA_TARGET=sm89` or expose only one GPU generation.
 
-Rolling tags move when a new Hedron version is published. For reproducible deployments, append a release version—for example, `sm89-cu13-v0.7.0` or `fat-cu13-v0.7.0`—and preferably record the image digest resolved by your deployment system.
+Rolling tags move when a new Hedron version is published. The automatic image uses `latest`; its immutable counterpart is the bare release tag, such as `v0.7.0`. Architecture-specific releases use tags such as `sm89-cu13-v0.7.0`. Prefer an immutable tag and record its digest for reproducible deployments.
 
 ## Load a model
 
@@ -106,9 +106,9 @@ These are the model commands most operators need:
 Inspect the exact options shipped in an image:
 
 ```bash
-docker run --rm ghcr.io/geodesa-ai/hedron:fat-cu13 --help
-docker run --rm ghcr.io/geodesa-ai/hedron:fat-cu13 gguf --help
-docker run --rm ghcr.io/geodesa-ai/hedron:fat-cu13 diffusion --help
+docker run --rm ghcr.io/geodesa-ai/hedron:latest --help
+docker run --rm ghcr.io/geodesa-ai/hedron:latest gguf --help
+docker run --rm ghcr.io/geodesa-ai/hedron:latest diffusion --help
 ```
 
 ### Hugging Face authentication
@@ -120,7 +120,7 @@ docker run --name hedron --rm --gpus all \
   -e HF_TOKEN \
   -p 127.0.0.1:8080:80 \
   -v "${HOME}/.cache/huggingface:/data" \
-  ghcr.io/geodesa-ai/hedron:fat-cu13 \
+  ghcr.io/geodesa-ai/hedron:latest \
   --port 80 run -m OWNER/GATED-MODEL
 ```
 
@@ -134,7 +134,7 @@ Mount a local directory read-only and pass the container path as the model ID:
 docker run --name hedron --rm --gpus all \
   -p 127.0.0.1:8080:80 \
   -v /srv/models:/models:ro \
-  ghcr.io/geodesa-ai/hedron:fat-cu13 \
+  ghcr.io/geodesa-ai/hedron:latest \
   --port 80 gguf -m /models/qwen -f model.gguf
 ```
 
@@ -185,7 +185,7 @@ MTP uses the prediction head embedded in the target model:
 
 ```bash
 docker run --rm --gpus all -p 127.0.0.1:8080:80 \
-  ghcr.io/geodesa-ai/hedron:fat-cu13 \
+  ghcr.io/geodesa-ai/hedron:latest \
   --port 80 \
   --speculator-mode mtp --speculator-max-draft-tokens 4 \
   gguf -m OWNER/TARGET-GGUF -f TARGET.gguf
@@ -195,7 +195,7 @@ DFlash loads a draft head from a Hugging Face repository or a local snapshot con
 
 ```bash
 docker run --rm --gpus all -p 127.0.0.1:8080:80 \
-  ghcr.io/geodesa-ai/hedron:fat-cu13 \
+  ghcr.io/geodesa-ai/hedron:latest \
   --port 80 \
   --speculator-mode dflash \
   --speculator-source OWNER/DFLASH-HEAD \
@@ -211,7 +211,7 @@ For GGUF MoE models, bound the routed experts resident on the GPU and, optionall
 
 ```bash
 docker run --rm --gpus all -p 127.0.0.1:8080:80 \
-  ghcr.io/geodesa-ai/hedron:fat-cu13 \
+  ghcr.io/geodesa-ai/hedron:latest \
   --port 80 \
   --expert-gpu-slots 24 --expert-host-slots 64 \
   gguf -m OWNER/MOE-GGUF -f MODEL.gguf
@@ -256,8 +256,8 @@ Hedron does not provide transport encryption or validate API keys. Do not expose
 | Symptom | What to check |
 |---|---|
 | Docker cannot see a GPU | Run `docker run --rm --gpus all nvidia/cuda:13.0.0-base-ubuntu24.04 nvidia-smi`; repair the host driver or NVIDIA Container Toolkit first. |
-| `no kernel image is available` | The architecture tag does not match the GPU. Use the matching tag or `fat-cu13`. |
-| `fat-cu13` cannot select a binary | Ensure `nvidia-smi` is available in the container and only one GPU generation is visible, or set `HEDRON_CUDA_TARGET`. |
+| `no kernel image is available` | The architecture tag does not match the GPU. Use the matching tag or `latest`. |
+| `latest` cannot select a binary | Ensure `nvidia-smi` is available in the container and only one GPU generation is visible, or set `HEDRON_CUDA_TARGET`. |
 | Hugging Face returns 401 or 403 | Pass the token with `-e HF_TOKEN`, confirm the account has accepted any model license, and verify the repository name. |
 | A request says the model does not exist | Use `"model":"default"` or copy the exact ID from `/v1/models`. |
 | CUDA out of memory | Choose a smaller quantization, lower `--max-seqs` or `--pa-ctxt-len`, bound prefill with `--pa-prefill-chunk-size`, or configure layer/expert offloading. |
