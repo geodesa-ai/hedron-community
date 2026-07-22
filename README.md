@@ -240,7 +240,19 @@ docker run --rm --gpus all -p 127.0.0.1:8080:80 \
 
 GPU slots must cover the model's routed top-k. Find `k` in the Hugging Face `config.json` as `num_experts_per_tok`, or in GGUF metadata as `<architecture>.expert_used_count`. Start with `ceil(1.5 × k)` slots and increase it as GPU memory permits. Hedron reports the detected `k` and a recommendation during startup. Setting exactly `k` is valid but leaves no spare residency and is likely to thrash as routing changes between tokens.
 
-`--expert-host-slots` requires `--expert-gpu-slots`. Omit the host value to let Hedron size the warm tier from available host memory.
+`--expert-host-slots` requires `--expert-gpu-slots`. On discrete GPUs, omit the host value to let Hedron size the warm tier from available host memory.
+
+GB10/DGX Spark is different: SM121 uses unified CPU/GPU memory, so a resident "host" expert tier would consume the same physical memory needed by GPU-resident weights and cache. Hedron therefore rejects `--expert-host-slots` and `EXPERT_HOST_SLOTS` at runtime on SM121. Configure only `--expert-gpu-slots`; all cold experts remain storage-backed and are read into a bounded pinned staging window for transfer to the GPU:
+
+```bash
+docker run --rm --gpus all -p 127.0.0.1:8080:80 \
+  ghcr.io/geodesa-ai/hedron:sm121f-cu13 \
+  --port 80 \
+  --model hf://OWNER/MOE-GGUF/MODEL.gguf \
+  --expert-gpu-slots 24
+```
+
+That staging window is transfer machinery, not a warm expert cache: it is overwritten on every cold swap and does not retain resident host experts.
 
 ## Operate Hedron
 
@@ -287,6 +299,7 @@ Hedron does not provide transport encryption or validate API keys. Do not expose
 - Model-scoped options are positional. An option configures the most recent `--model`; misplaced options fail startup rather than silently applying elsewhere.
 - `--revision` applies only to `hf://` sources. Pin both the image tag or digest and the model revision for a reproducible deployment.
 - Expert offloading currently applies to routed experts in GGUF MoE models. It does not make an otherwise unsupported model layout loadable.
+- SM121/GB10 expert offloading is storage-only. Supplying `--expert-host-slots` or `EXPERT_HOST_SLOTS` is an intentional startup error.
 - The built-in HTTP server is an inference endpoint, not an internet-facing security boundary.
 
 ## Troubleshoot
