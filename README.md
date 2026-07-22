@@ -72,7 +72,7 @@ Images are published at [`ghcr.io/geodesa-ai/hedron`](https://github.com/geodesa
 
 Architecture-specific images are smaller and are the recommended production choice. The default image packages every architecture-specific server binary and selects one using `nvidia-smi`. If GPUs with different compute capabilities are visible in one container, set an explicit target such as `-e HEDRON_CUDA_TARGET=sm89` or expose only one GPU generation.
 
-Rolling tags move when a new Hedron version is published. The automatic image uses `latest`; its immutable counterpart is the bare release tag, such as `v0.7.0`. Architecture-specific releases use tags such as `sm89-cu13-v0.7.0`. Prefer an immutable tag and record its digest for reproducible deployments.
+Rolling tags move when a new Hedron version is published. The automatic image uses `latest`; its immutable counterpart is the bare release tag, such as `v0.7.0`. Architecture-specific releases place the version first, as in `v0.7.0-sm89-cu13`. Prefer an immutable tag and record its digest for reproducible deployments.
 
 ## Load a model
 
@@ -229,7 +229,7 @@ For a long-running deployment, use a fixed architecture tag, persist `/data`, na
 docker run -d --name hedron --restart unless-stopped --gpus all \
   -p 127.0.0.1:8080:80 \
   -v "${HOME}/.cache/huggingface:/data" \
-  ghcr.io/geodesa-ai/hedron:sm89-cu13-v0.7.0 \
+  ghcr.io/geodesa-ai/hedron:v0.7.0-sm89-cu13 \
   --port 80 \
   gguf -m unsloth/Qwen3.5-9B-GGUF -f Qwen3.5-9B-Q4_K_M.gguf
 ```
